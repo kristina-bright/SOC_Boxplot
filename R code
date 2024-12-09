@@ -1,0 +1,159 @@
+# Load necessary libraries
+if (!requireNamespace("tidyverse", quietly = TRUE)) {
+  install.packages("tidyverse")
+}
+if (!requireNamespace("ggpubr", quietly = TRUE)) {
+  install.packages("ggpubr")
+}
+if (!requireNamespace("ggsignif", quietly = TRUE)) {
+  install.packages("ggsignif")
+}
+
+library(tidyverse)
+library(readxl)
+library(ggpubr)
+library(ggsignif)
+
+# Read data (adjust the path as needed)
+df <- read_excel("Y:/common/Projects/SOC BenceKristina/Excel Tables/CHN/MetaCHN.xlsx")
+
+df_clean <- df %>%
+  filter(!is.na(Depth) & !is.na(Topo)) %>%
+  mutate(
+    Depth = case_when(
+      Depth == "A" ~ "0-10 cm",
+      Depth == "B" ~ "10-30 cm",
+      Depth == "C" ~ "30-50 cm",
+      TRUE ~ Depth
+    ),
+    Topo = case_when(
+      Topo == "F" ~ "Floodplain",
+      Topo == "S" ~ "Hillslope",
+      TRUE ~ Topo
+    ),
+    Topo = factor(Topo, levels = c("Floodplain", "Hillslope"))
+  )
+
+custom_colors <- c(
+  "0-10 cm" = "#B3CDE3",
+  "10-30 cm" = "#CCEBC5",
+  "30-50 cm" = "#CDB5E3"
+)
+
+# Create base plot
+p <- ggplot(df_clean, aes(x = Topo, y = C, fill = Depth)) +
+  geom_boxplot(outlier.shape = NA, colour = "black", width = 0.6, 
+               position = position_dodge(width = 0.75)) +
+  labs(x = "", y = "% of SOC", fill = "Depth") +
+  scale_fill_manual(values = custom_colors) +
+  theme_minimal(base_size = 16) +  # Base font size
+  theme(
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.text.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 14),
+    legend.position = c(0.9, 0.9),
+    legend.justification = c("right", "top")
+  )
+
+star_annotation <- function(p) {
+  if (p < 0.0001) return("****")
+  else if (p < 0.001) return("***")
+  else if (p < 0.01) return("**")
+  else if (p < 0.05) return("*")
+  else return(NULL)
+}
+
+floodplain_tests <- compare_means(C ~ Depth, data = df_clean %>% filter(Topo == "Floodplain"), method = "t.test")
+hillslope_tests <- compare_means(C ~ Depth, data = df_clean %>% filter(Topo == "Hillslope"), method = "t.test")
+
+floodplain_pairs <- list(
+  c("10-30 cm", "30-50 cm"),
+  c("0-10 cm", "10-30 cm"),
+  c("0-10 cm", "30-50 cm")
+)
+hillslope_pairs <- floodplain_pairs
+
+hs_positions <- c(15, 20, 25)
+fp_positions <- c(60, 65, 70)
+top_positions <- c(80, 85, 90)
+
+# Hillslope internal comparisons
+for (i in seq_along(hillslope_pairs)) {
+  pair <- hillslope_pairs[[i]]
+  pval <- hillslope_tests %>%
+    filter((group1 == pair[1] & group2 == pair[2]) | (group1 == pair[2] & group2 == pair[1])) %>%
+    pull(p)
+  
+  annot <- star_annotation(pval)
+  if (!is.null(annot)) {
+    xvals <- c("0-10 cm"=1.85, "10-30 cm"=2.00, "30-50 cm"=2.15)
+    p <- p + 
+      geom_signif(
+        annotations = annot,
+        y_position = hs_positions[i],
+        xmin = xvals[pair[1]] - 0.05,
+        xmax = xvals[pair[2]] + 0.05,
+        tip_length = 0.03,
+        textsize = 4  
+      )
+  }
+}
+
+# Floodplain internal comparisons
+for (i in seq_along(floodplain_pairs)) {
+  pair <- floodplain_pairs[[i]]
+  pval <- floodplain_tests %>%
+    filter((group1 == pair[1] & group2 == pair[2]) | (group1 == pair[2] & group2 == pair[1])) %>%
+    pull(p)
+  
+  annot <- star_annotation(pval)
+  if (!is.null(annot)) {
+    xvals <- c("0-10 cm"=0.85, "10-30 cm"=1.00, "30-50 cm"=1.15)
+    p <- p + 
+      geom_signif(
+        annotations = annot,
+        y_position = fp_positions[i],
+        xmin = xvals[pair[1]],
+        xmax = xvals[pair[2]],
+        tip_length = 0.03,
+        textsize = 4  
+      )
+  }
+}
+
+# Top-level differences
+p <- p +
+  stat_compare_means(
+    data = df_clean %>% filter(Depth == "0-10 cm"),
+    aes(x = Topo, y = C),
+    comparisons = list(c("Floodplain","Hillslope")),
+    label = "p.signif", method = "t.test", hide.ns = TRUE,
+    position = position_dodge(width = 0.75),
+    y.position = top_positions[1],
+    size = 4  
+  ) +
+  stat_compare_means(
+    data = df_clean %>% filter(Depth == "10-30 cm"),
+    aes(x = Topo, y = C),
+    comparisons = list(c("Floodplain","Hillslope")),
+    label = "p.signif", method = "t.test", hide.ns = TRUE,
+    position = position_dodge(width = 0.75),
+    y.position = top_positions[2],
+    size = 4  
+  ) +
+  stat_compare_means(
+    data = df_clean %>% filter(Depth == "30-50 cm"),
+    aes(x = Topo, y = C),
+    comparisons = list(c("Floodplain","Hillslope")),
+    label = "p.signif", method = "t.test", hide.ns = TRUE,
+    position = position_dodge(width = 0.75),
+    y.position = top_positions[3],
+    size = 4  
+  )
+
+# Print 
+p
